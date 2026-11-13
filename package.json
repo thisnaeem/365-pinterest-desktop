@@ -1,0 +1,75 @@
+{
+  "author": "Anjum Labs",
+  "build": {
+    "appId": "com.anjumlabs.pinterest365",
+    "copyright": "Copyright \u00a9 2025 Anjum Labs",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "scripts/selftest.js"
+    ],
+    "linux": {
+      "category": "Network",
+      "icon": "build/icon.png",
+      "target": "AppImage"
+    },
+    "mac": {
+      "category": "public.app-category.social-networking",
+      "icon": "build/icon.png",
+      "target": "dmg"
+    },
+    "nsis": {
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "oneClick": true,
+      "perMachine": false,
+      "shortcutName": "365 Pinterest"
+    },
+    "productName": "365 Pinterest",
+    "protocols": [
+      {
+        "name": "365 Pinterest",
+        "schemes": [
+          "pinterest365"
+        ]
+      }
+    ],
+    "publish": [
+      {
+        "owner": "thisnaeem",
+        "provider": "github",
+        "releaseType": "release",
+        "repo": "365-pinterest-desktop"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": "nsis"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.0"
+  },
+  "description": "365 Pinterest desktop app (Electron) \u2014 Pinterest automation: schedule pins, manage boards, write AI blogs and auto-pin them. Wraps https://365pinterest.com.",
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "license": "MIT",
+  "main": "main.js",
+  "name": "365-pinterest-desktop",
+  "private": true,
+  "scripts": {
+    "build": "electron-builder",
+    "build:linux": "electron-builder --linux",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "pack": "electron-builder --dir",
+    "start": "electron ."
+  },
+  "version": "1.0.0"
+}
