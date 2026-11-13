@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('desktop', {
 
   getInfo: () => ipcRenderer.invoke('app:getInfo'),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
+  getUpdateState: () => ipcRenderer.invoke('app:getUpdateState'),
   checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
   downloadUpdate: () => ipcRenderer.invoke('app:downloadUpdate'),
   installUpdate: () => ipcRenderer.invoke('app:installUpdate'),
@@ -29,6 +30,10 @@ contextBridge.exposeInMainWorld('desktop', {
   hasKey: () => ipcRenderer.invoke('auth:hasKey'),
   validateKey: (key) => ipcRenderer.invoke('auth:validate', key),
   clearKey: () => ipcRenderer.invoke('auth:clear'),
+  signInEmail: (email, password) => ipcRenderer.invoke('auth:signInEmail', email, password),
+  signInPinterest: () => ipcRenderer.invoke('auth:signInPinterest'),
+  signOut: () => ipcRenderer.invoke('auth:signOut'),
+  getUser: () => ipcRenderer.invoke('auth:getUser'),
 
   getAccount: (accountId) => ipcRenderer.invoke('api:account', accountId || null),
   listBoards: (accountId) => ipcRenderer.invoke('api:boards', accountId || null),

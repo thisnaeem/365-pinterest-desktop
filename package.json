@@ -1,69 +1,12 @@
 {
   "author": "Anjum Labs",
-  "build": {
-    "appId": "com.anjumlabs.pinterest365",
-    "copyright": "Copyright \u00a9 2025 Anjum Labs",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "main.js",
-      "preload.js",
-      "renderer/**/*",
-      "package.json",
-      "scripts/selftest.js"
-    ],
-    "linux": {
-      "category": "Network",
-      "icon": "build/icon.png",
-      "target": "AppImage"
-    },
-    "mac": {
-      "category": "public.app-category.social-networking",
-      "icon": "build/icon.png",
-      "target": "dmg"
-    },
-    "nsis": {
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "oneClick": true,
-      "perMachine": false,
-      "shortcutName": "365 Pinterest"
-    },
-    "productName": "365 Pinterest",
-    "publish": [
-      {
-        "owner": "thisnaeem",
-        "provider": "github",
-        "releaseType": "release",
-        "repo": "365-pinterest-desktop"
-      }
-    ],
-    "win": {
-      "icon": "build/icon.png",
-      "target": "nsis"
-    }
-  },
   "dependencies": {
     "electron-updater": "^6.3.0"
   },
-  "description": "365 Pinterest desktop app (Electron) \u2014 native desktop client for 365pinterest.com: boards, pins, scheduling, queue and analytics over the 365 Pinterest REST API.",
-  "devDependencies": {
-    "electron": "^32.0.0",
-    "electron-builder": "^25.0.0"
-  },
+  "description": "365 Pinterest desktop app (Electron) — native desktop client for 365pinterest.com: boards, pins, scheduling, queue and analytics over the 365 Pinterest REST API.",
   "license": "MIT",
   "main": "main.js",
   "name": "365-pinterest-desktop",
   "private": true,
-  "scripts": {
-    "build": "electron-builder",
-    "build:linux": "electron-builder --linux",
-    "build:mac": "electron-builder --mac",
-    "build:win": "electron-builder --win",
-    "pack": "electron-builder --dir",
-    "start": "electron .",
-    "selftest": "electron scripts/selftest.js"
-  },
-  "version": "2.0.0"
+  "version": "2.1.0"
 }

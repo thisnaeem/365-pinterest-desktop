@@ -1,14 +1,23 @@
 'use strict';
-/* 365 Pinterest — desktop app v2.0.0 renderer.
+/* 365 Pinterest — desktop app v2.1.0 renderer.
    Pure local UI. All data comes from the main process (window.desktop),
    which is the only side that talks to the 365 Pinterest REST API.
    Nothing here is faked: every number is from the API, and empty states
    say so honestly. */
 const d = window.desktop;
 
+// Genuine Hugeicons glyphs (renderer/icons.js — extracted from the
+// website's @hugeicons/core-free-icons package, stroke-width 1.8 exactly
+// as the website renders them). ic() returns the inline SVG string.
+const ic = (name) => (typeof ICONS !== 'undefined' && ICONS[name]) || '';
+function hydrateIcons(root = document) {
+  root.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = ic(el.dataset.icon); });
+}
+
 const state = {
   screen: 'dashboard',
   hasKey: false,
+  user: null,             // signed-in identity { email, name } (null for paste-key)
   account: null,          // /api/v1/account for the active account
   accounts: [],           // discovered accounts [{ id, username, pinterestUserId, needsReconnect }]
   settings: { theme: 'light', accountId: null },
@@ -23,6 +32,8 @@ const state = {
   analytics: null,
   createImage: null,      // { path, name, size, mime, dataUrl }
   version: '',
+  update: { status: 'idle', version: null, progress: 0, error: null, lastCheckedAt: null },
+  updateBannerDismissedFor: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -74,6 +85,7 @@ async function handleResult(res, opts = {}) {
   const msg = (res && res.error) || 'Something went wrong.';
   if (res && res.status === 401) {
     state.hasKey = false;
+    state.user = null;
     showScreen('setup');
     const se = $('setup-error');
     se.textContent = msg;
@@ -292,7 +304,7 @@ async function renderBoards() {
     ? 'Your Pinterest boards.'
     : `${state.boards.length} board${state.boards.length === 1 ? '' : 's'} on @${state.account ? state.account.username : ''}.`;
   if (state.boards.length === 0) {
-    host.innerHTML = `<div class="empty"><h3>No boards found</h3><p>Your Pinterest boards will appear here once the account is connected.<br>If you just connected Pinterest on the website, press Refresh.</p><button class="btn btn-primary" id="empty-new-board">＋ New board</button></div>`;
+    host.innerHTML = `<div class="empty"><h3>No boards found</h3><p>Your Pinterest boards will appear here once the account is connected.<br>If you just connected Pinterest on the website, press Refresh.</p><button class="btn btn-primary" id="empty-new-board">${ic('plus-sign')} New board</button></div>`;
     $('empty-new-board').addEventListener('click', openBoardModal);
     return;
   }
@@ -397,7 +409,7 @@ async function renderPins() {
   const list = filteredPins();
   document.querySelectorAll('#status-chips .chip').forEach((c) => c.classList.toggle('active', c.dataset.status === state.pinStatusFilter));
   if (list.length === 0) {
-    host.innerHTML = `<div class="empty"><h3>No pins here yet</h3><p>${state.pins.length === 0 ? 'Create your first pin — it takes a minute.' : 'Nothing matches these filters.'}</p><button class="btn btn-primary" data-goto="create">＋ New pin</button></div>`;
+    host.innerHTML = `<div class="empty"><h3>No pins here yet</h3><p>${state.pins.length === 0 ? 'Create your first pin — it takes a minute.' : 'Nothing matches these filters.'}</p><button class="btn btn-primary" data-goto="create">${ic('plus-sign')} New pin</button></div>`;
   } else {
     host.innerHTML = `<p class="muted mb-12">Showing ${list.length} of ${fmtNum(state.pinsTotal)} pins.</p><div class="pin-grid">${list.map(pinCardHtml).join('')}</div>`;
   }
@@ -539,7 +551,7 @@ async function renderQueue() {
   }
   state.queue = data.queue || [];
   if (state.queue.length === 0) {
-    host.innerHTML = '<div class="empty"><h3>Nothing scheduled</h3><p>Schedule a pin and it will appear here in publish order.<br>Scheduled pins are published automatically by the server.</p><button class="btn btn-primary" data-goto="create">＋ New pin</button></div>';
+    host.innerHTML = '<div class="empty"><h3>Nothing scheduled</h3><p>Schedule a pin and it will appear here in publish order.<br>Scheduled pins are published automatically by the server.</p><button class="btn btn-primary" data-goto="create">' + ic('plus-sign') + ' New pin</button></div>';
     return;
   }
   host.innerHTML = `<p class="muted mb-12">${state.queue.length} pin${state.queue.length === 1 ? '' : 's'} waiting to publish.</p>
@@ -657,6 +669,12 @@ async function renderSettings() {
       <h3>Connection</h3>
       <div class="settings-row">
         <div>
+          <div><strong>Signed in as</strong> — ${state.user && state.user.email ? esc(state.user.name ? `${state.user.name} (${state.user.email})` : state.user.email) : 'API key (email not recorded)'}</div>
+          <div class="kv">Signed in with the same account as the website.</div>
+        </div>
+      </div>
+      <div class="settings-row mt-12">
+        <div>
           <div><strong>API key</strong> — ${state.hasKey ? 'saved' : 'not set'}</div>
           <div class="kv">Stored ${info.keyMethod === 'safeStorage' ? 'encrypted (system keychain)' : info.keyMethod === 'safeStorage-plaintext' ? 'with basic encryption on this computer' : 'on this computer'} · never leaves the app except to 365pinterest.com</div>
         </div>
@@ -665,7 +683,7 @@ async function renderSettings() {
       <div class="settings-row mt-12">
         <div>
           <div><strong>Sign out</strong></div>
-          <div class="kv">Removes the saved API key from this computer. Your pins and boards stay on your account.</div>
+          <div class="kv">Revokes the app's API key and removes the saved sign-in from this computer. Your pins and boards stay on your account.</div>
         </div>
         <button class="btn btn-danger" id="settings-signout">Sign out</button>
       </div>
@@ -693,14 +711,16 @@ async function renderSettings() {
       <h3>About</h3>
       <div class="kv">365 Pinterest <strong>${esc(info.version)}</strong> · ${esc(info.platform)} · © ${new Date().getFullYear()} Anjum Labs</div>
       <div class="kv mt-6">Desktop client for <button class="linklike" data-open-external="https://365pinterest.com">365pinterest.com</button> — <button class="linklike" data-open-external="https://365pinterest.com/developers">API documentation</button></div>
-      <div class="mt-12"><button class="btn btn-secondary" id="settings-check-updates">Check for updates</button> <span class="kv" id="update-status"></span></div>
+      <div class="mt-12"><button class="btn btn-secondary" id="settings-check-updates">Check for updates</button> <button class="btn btn-secondary hidden" id="settings-download-update">${ic('download-01')} Download update</button> <button class="btn btn-primary hidden" id="settings-restart-update">Restart to install</button></div>
+      <div class="kv mt-6" id="settings-update-status"></div>
     </div>
   </div>`;
 
   $('settings-change-key').addEventListener('click', () => showScreen('setup'));
   $('settings-signout').addEventListener('click', async () => {
-    await d.clearKey();
+    await d.signOut();
     state.hasKey = false;
+    state.user = null;
     state.account = null;
     state.accounts = [];
     state.boards = [];
@@ -713,9 +733,12 @@ async function renderSettings() {
   });
   $('settings-theme').addEventListener('click', toggleTheme);
   $('settings-check-updates').addEventListener('click', async () => {
-    $('update-status').textContent = 'Checking…';
+    $('settings-update-status').textContent = 'Checking for updates…';
     await d.checkForUpdates();
   });
+  $('settings-download-update').addEventListener('click', async () => { await d.downloadUpdate(); });
+  $('settings-restart-update').addEventListener('click', async () => { await d.installUpdate(); });
+  renderUpdateUI();
   host.querySelectorAll('.account-row').forEach((row) => {
     row.addEventListener('click', async () => {
       const id = row.dataset.accountId || null;
@@ -731,11 +754,78 @@ async function renderSettings() {
 }
 
 // ---------------------------------------------------------------------------
+// Auto-update (v2.1.0) — visible status in Settings + a banner
+// ---------------------------------------------------------------------------
+function updateStatusText() {
+  const s = state.update;
+  const v = state.version || '';
+  if (s.status === 'checking') return `You're on v${v} — checking for updates…`;
+  if (s.status === 'available') return `You're on v${v} — update v${s.version} is available.`;
+  if (s.status === 'downloading') return `You're on v${v} — downloading v${s.version}… ${s.progress}%`;
+  if (s.status === 'downloaded') return `You're on v${v} — v${s.version} downloaded. Restart to install it.`;
+  if (s.status === 'error') return `You're on v${v} — update check failed${s.error ? ': ' + s.error : '.'}`;
+  if (s.status === 'up-to-date') return `You're on v${v} — you're up to date${s.lastCheckedAt ? ' (checked ' + fmtDate(s.lastCheckedAt) + ')' : ''}.`;
+  return `You're on v${v}.`;
+}
+
+function renderUpdateUI() {
+  const s = state.update;
+  const statusEl = $('settings-update-status');
+  if (statusEl) statusEl.textContent = updateStatusText();
+  const settingsDl = $('settings-download-update');
+  const settingsRestart = $('settings-restart-update');
+  if (settingsDl) settingsDl.classList.toggle('hidden', s.status !== 'available');
+  if (settingsRestart) settingsRestart.classList.toggle('hidden', s.status !== 'downloaded');
+  const banner = $('update-banner');
+  const textEl = $('update-banner-text');
+  const dlBtn = $('update-download-btn');
+  const restartBtn = $('update-restart-btn');
+  if (s.status === 'available' || s.status === 'downloading' || s.status === 'downloaded') {
+    if (state.updateBannerDismissedFor === s.version) { banner.classList.add('hidden'); return; }
+    banner.classList.remove('hidden');
+    if (s.status === 'available') {
+      textEl.textContent = `Update v${s.version} is available — you're on v${state.version}.`;
+      dlBtn.classList.remove('hidden');
+      restartBtn.classList.add('hidden');
+    } else if (s.status === 'downloading') {
+      textEl.textContent = `Downloading v${s.version}… ${s.progress}%`;
+      dlBtn.classList.add('hidden');
+      restartBtn.classList.add('hidden');
+    } else {
+      textEl.textContent = `Update v${s.version} downloaded — restart to install it.`;
+      dlBtn.classList.add('hidden');
+      restartBtn.classList.remove('hidden');
+    }
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+function handleUpdateEvent(payload) {
+  if (payload.type === 'update-state' && payload.state) {
+    state.update = { ...state.update, ...payload.state };
+  } else if (payload.type === 'update-available') {
+    state.update = { ...state.update, status: 'available', version: payload.version, progress: 0 };
+  } else if (payload.type === 'update-progress') {
+    state.update = { ...state.update, status: 'downloading', progress: payload.percent || 0 };
+  } else if (payload.type === 'update-downloaded') {
+    state.update = { ...state.update, status: 'downloaded', version: payload.version, progress: 100 };
+  } else if (payload.type === 'update-not-available') {
+    state.update = { ...state.update, status: 'up-to-date', lastCheckedAt: new Date().toISOString() };
+  } else if (payload.type === 'update-error') {
+    state.update = { ...state.update, status: 'error', error: payload.message || 'Update check failed.' };
+  } else {
+    return;
+  }
+  renderUpdateUI();
+}
+
+// ---------------------------------------------------------------------------
 // Theme
 // ---------------------------------------------------------------------------
 function applyTheme() {
   document.documentElement.setAttribute('data-theme', state.settings.theme);
-  $('theme-toggle').textContent = state.settings.theme === 'dark' ? 'Light' : 'Dark';
+  $('theme-toggle').innerHTML = ic(state.settings.theme === 'dark' ? 'sun-02' : 'moon-02');
 }
 async function toggleTheme() {
   state.settings.theme = state.settings.theme === 'dark' ? 'light' : 'dark';
@@ -744,8 +834,71 @@ async function toggleTheme() {
 }
 
 // ---------------------------------------------------------------------------
-// Setup
+// Setup — same sign-in as the website (v2.1.0)
 // ---------------------------------------------------------------------------
+// Email + password: the password is only sent to 365pinterest.com inside
+// the sign-in request — it is never stored or logged. On success the main
+// process mints a desktop API key from the session, so the app then works
+// exactly like the paste-key flow.
+async function submitEmailSignIn(event) {
+  event.preventDefault();
+  const errEl = $('setup-error');
+  const verifyEl = $('verify-box');
+  errEl.classList.add('hidden');
+  verifyEl.classList.add('hidden');
+  const email = $('signin-email').value.trim();
+  const password = $('signin-password').value;
+  if (!email || !password) { errEl.textContent = 'Enter your email and password.'; errEl.classList.remove('hidden'); return; }
+  const btn = $('signin-btn');
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  const res = await d.signInEmail(email, password);
+  btn.disabled = false;
+  btn.textContent = 'Sign in';
+  if (!res || !res.ok) {
+    if (res && res.needsVerification) {
+      verifyEl.textContent = res.error;
+      verifyEl.classList.remove('hidden');
+    } else {
+      errEl.textContent = (res && res.error) || 'Could not sign in.';
+      errEl.classList.remove('hidden');
+    }
+    return;
+  }
+  state.user = res.user || null;
+  state.hasKey = true;
+  state.account = null;
+  state.boardsLoaded = false;
+  $('signin-password').value = '';
+  showToast(state.user && state.user.name ? `Signed in as ${state.user.name}.` : 'Signed in.');
+  await loadAllForDashboard();
+  showScreen('dashboard');
+}
+
+// "Continue with Pinterest" — in-window OAuth (proven in v1). Closing the
+// window is a quiet cancel, not an error.
+async function submitPinterestSignIn() {
+  const errEl = $('setup-error');
+  errEl.classList.add('hidden');
+  const btn = $('pinterest-btn');
+  btn.disabled = true;
+  const res = await d.signInPinterest();
+  btn.disabled = false;
+  if (!res || !res.ok) {
+    if (res && res.error === 'cancelled') return;
+    errEl.textContent = (res && res.error) || 'Pinterest sign-in failed.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  state.user = res.user || null;
+  state.hasKey = true;
+  state.account = null;
+  state.boardsLoaded = false;
+  showToast('Signed in with Pinterest.');
+  await loadAllForDashboard();
+  showScreen('dashboard');
+}
+
 async function submitSetup() {
   const key = $('api-key-input').value.trim();
   const errEl = $('setup-error');
@@ -762,6 +915,7 @@ async function submitSetup() {
     errEl.classList.remove('hidden');
     return;
   }
+  state.user = null; // paste-key flow: no identity recorded
   state.hasKey = true;
   state.account = res.data;
   state.boardsLoaded = false;
@@ -805,6 +959,14 @@ function wireEvents() {
   $('new-pin-btn').addEventListener('click', () => go('create'));
   $('refresh-btn').addEventListener('click', refreshCurrent);
   $('theme-toggle').addEventListener('click', toggleTheme);
+  $('signin-form').addEventListener('submit', submitEmailSignIn);
+  $('pinterest-btn').addEventListener('click', submitPinterestSignIn);
+  $('update-download-btn').addEventListener('click', async () => { await d.downloadUpdate(); });
+  $('update-restart-btn').addEventListener('click', async () => { await d.installUpdate(); });
+  $('update-dismiss-btn').addEventListener('click', () => {
+    state.updateBannerDismissedFor = state.update.version;
+    $('update-banner').classList.add('hidden');
+  });
   $('toggle-key-visibility').addEventListener('click', () => {
     const input = $('api-key-input');
     const show = input.type === 'password';
@@ -855,19 +1017,7 @@ function wireEvents() {
   d.onNav((screen) => go(screen));
   d.onRefresh(() => refreshCurrent());
   d.onToggleTheme(() => toggleTheme());
-  d.onUpdateEvent((payload) => {
-    if (payload.type === 'update-available') {
-      showToast(`Update ${payload.version} available — download it from Settings.`);
-    } else if (payload.type === 'update-downloaded') {
-      showToast(`Update ${payload.version} downloaded — restart to install.`);
-    } else if (payload.type === 'update-error') {
-      const el = $('update-status');
-      if (el) el.textContent = payload.message || 'Update check failed.';
-    } else if (payload.type === 'update-not-available') {
-      const el = $('update-status');
-      if (el) el.textContent = 'You are on the latest version.';
-    }
-  });
+  d.onUpdateEvent(handleUpdateEvent);
 }
 
 // ---------------------------------------------------------------------------
@@ -875,12 +1025,25 @@ function wireEvents() {
 // ---------------------------------------------------------------------------
 async function boot() {
   wireEvents();
+  hydrateIcons();
   const info = await d.getInfo();
   state.version = info.version || '';
   $('version-label').textContent = `365 Pinterest v${state.version}`;
   state.settings = { theme: 'light', accountId: null, ...(await d.getSettings()) };
   applyTheme();
   state.hasKey = await d.hasKey();
+  state.user = await d.getUser();
+  const us = await d.getUpdateState();
+  if (us) {
+    state.update = {
+      status: us.status || 'idle',
+      version: us.version || null,
+      progress: us.progress || 0,
+      error: us.error || null,
+      lastCheckedAt: us.lastCheckedAt || null,
+    };
+  }
+  renderUpdateUI();
   const hash = (location.hash || '').replace('#/', '');
   const start = ['dashboard', 'boards', 'pins', 'create', 'queue', 'analytics', 'settings'].includes(hash) ? hash : 'dashboard';
   if (!state.hasKey) {

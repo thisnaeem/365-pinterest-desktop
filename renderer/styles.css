@@ -93,7 +93,9 @@ h3 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
 }
 .nav-item:hover { background: var(--surface-2); color: var(--text); }
 .nav-item.active { background: var(--sidebar-active); color: var(--red); font-weight: 600; }
-.nav-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+/* v2.1.0 — genuine Hugeicons (same 18px size + strokeWidth 1.8 as the website's sidebar). */
+.nav-icon { width: 20px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.nav-icon svg { width: 18px; height: 18px; display: block; }
 
 .sidebar-foot { border-top: 1px solid var(--border); padding-top: 12px; }
 .account-chip { display: flex; align-items: center; gap: 10px; padding: 6px 8px; }
@@ -122,11 +124,19 @@ h3 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
   border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
   color: var(--text); padding: 8px 16px; font-size: 13px; font-weight: 600;
   cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
 }
 .btn:hover { background: var(--surface-2); }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .btn-primary { background: var(--red); border-color: var(--red); color: #fff; }
 .btn-primary:hover { background: var(--red-dark); }
+/* v2.1.0 — "Continue with Pinterest": same red button as the website's sign-in page. */
+.btn-pinterest { background: var(--red); border-color: var(--red); color: #fff; }
+.btn-pinterest:hover { background: var(--red-dark); }
+.btn-icon { padding: 8px; width: 34px; height: 34px; }
+/* v2.1.0 — inline Hugeicons inside buttons (16px). */
+.hicon { display: inline-flex; align-items: center; justify-content: center; }
+.hicon svg { width: 16px; height: 16px; display: block; }
 .btn-secondary { background: var(--surface-2); }
 .btn-ghost { border-color: transparent; background: transparent; color: var(--text-2); }
 .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
@@ -152,6 +162,24 @@ textarea.input { resize: vertical; }
 .alert-error { background: #FDECEF; color: #8F0E1E; border: 1px solid #F5C2C9; }
 [data-theme="dark"] .alert-error { background: #3A171B; color: #FECDD3; border-color: #5B232A; }
 .alert-info { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+
+/* v2.1.0 — auto-update banner (visible, non-intrusive, above the screens). */
+.update-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: #FDECEF; border: 1px solid #F5C2C9; color: #8F0E1E;
+  border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 16px;
+  font-size: 13px; font-weight: 500;
+}
+[data-theme="dark"] .update-banner { background: #3A171B; color: #FECDD3; border-color: #5B232A; }
+.update-banner-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+/* v2.1.0 — sign-in divider + search adornment. */
+.setup-divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 4px; color: var(--text-3); font-size: 12px; }
+.setup-divider::before, .setup-divider::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
+.search-wrap { position: relative; }
+.search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-3); display: inline-flex; }
+.search-icon svg { width: 16px; height: 16px; display: block; }
+.search-wrap .input { padding-left: 34px; }
 .alert-success { background: #EAF7EE; color: #14532D; border: 1px solid #BBE5C6; }
 [data-theme="dark"] .alert-success { background: #14261A; color: #BBF7D0; border-color: #1F3D2A; }
 
@@ -269,7 +297,8 @@ textarea.input { resize: vertical; }
   display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px;
   background: var(--surface-2);
 }
-.image-drop-icon { font-size: 36px; color: var(--text-3); }
+.image-drop-icon { color: var(--text-3); }
+.image-drop-icon svg { width: 48px; height: 48px; display: block; margin: 0 auto; }
 #image-preview { max-width: 100%; max-height: 320px; border-radius: var(--radius-sm); object-fit: contain; }
 
 /* ---- Empty / loading ---- */
