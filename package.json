@@ -1,12 +1,1 @@
-{
-  "author": "Anjum Labs",
-  "dependencies": {
-    "electron-updater": "^6.3.0"
-  },
-  "description": "365 Pinterest desktop app (Electron) — native desktop client for 365pinterest.com: boards, pins, scheduling, queue and analytics over the 365 Pinterest REST API.",
-  "license": "MIT",
-  "main": "main.js",
-  "name": "365-pinterest-desktop",
-  "private": true,
-  "version": "2.1.0"
-}
+{"author":"Anjum Labs","build":{"appId":"com.anjumlabs.pinterest365","files":["main.js","preload.js","renderer/**/*","package.json","scripts/selftest.js","build/icon.png"],"productName":"365 Pinterest","publish":{"owner":"thisnaeem","provider":"github","releaseType":"release","repo":"365-pinterest-desktop"},"win":{"target":"nsis"}},"dependencies":{"electron-updater":"^6.3.0"},"description":"365 Pinterest desktop app (Electron) — native desktop client for 365pinterest.com: boards, pins, scheduling, queue and analytics. Signs in with your 365 Pinterest account (email + password or Pinterest) — no API keys.","license":"MIT","main":"main.js","name":"365-pinterest-desktop","private":true,"scripts":{"build:win":"electron-builder --win --publish never","selftest":"node scripts/selftest.js","start":"electron --no-sandbox ."},"version":"2.2.0"}

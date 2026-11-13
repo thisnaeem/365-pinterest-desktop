@@ -1,9 +1,10 @@
 'use strict';
-/* 365 Pinterest — desktop app v2.1.0 renderer.
+/* 365 Pinterest — desktop app v2.2.0 renderer.
    Pure local UI. All data comes from the main process (window.desktop),
    which is the only side that talks to the 365 Pinterest REST API.
-   Nothing here is faked: every number is from the API, and empty states
-   say so honestly. */
+   Auth is the signed-in session — the app holds no credential of any
+   kind. Nothing here is faked: every number is from the API, and empty
+   states say so honestly. */
 const d = window.desktop;
 
 // Genuine Hugeicons glyphs (renderer/icons.js — extracted from the
@@ -16,8 +17,8 @@ function hydrateIcons(root = document) {
 
 const state = {
   screen: 'dashboard',
-  hasKey: false,
-  user: null,             // signed-in identity { email, name } (null for paste-key)
+  signedIn: false,
+  user: null,             // signed-in identity { email, name }
   account: null,          // /api/v1/account for the active account
   accounts: [],           // discovered accounts [{ id, username, pinterestUserId, needsReconnect }]
   settings: { theme: 'light', accountId: null },
@@ -76,7 +77,7 @@ function showGlobalError(msg, upgradeUrl) {
   el.classList.remove('hidden');
 }
 
-/** Handle an API result. Returns data or null; shows errors + routes 401 to Setup. */
+/** Handle an API result. Returns data or null; shows errors + routes 401 to the sign-in screen. */
 async function handleResult(res, opts = {}) {
   if (res && res.ok) {
     if (!opts.keepError) showGlobalError(null);
@@ -84,7 +85,7 @@ async function handleResult(res, opts = {}) {
   }
   const msg = (res && res.error) || 'Something went wrong.';
   if (res && res.status === 401) {
-    state.hasKey = false;
+    state.signedIn = false;
     state.user = null;
     showScreen('setup');
     const se = $('setup-error');
@@ -104,13 +105,24 @@ function activeAccountId() {
 // Router
 // ---------------------------------------------------------------------------
 const TITLES = {
-  setup: 'Connect', dashboard: 'Dashboard', boards: 'Boards', pins: 'Pins',
+  setup: 'Sign in', dashboard: 'Dashboard', boards: 'Boards', pins: 'Pins',
   create: 'New pin', queue: 'Queue', analytics: 'Analytics', settings: 'Settings',
+};
+const SUBTITLES = {
+  setup: '',
+  dashboard: 'Your Pinterest at a glance.',
+  boards: 'Boards on your connected account.',
+  pins: 'Every pin saved in your account.',
+  create: 'Draft or schedule — never published on the spot.',
+  queue: 'Scheduled pins, in the order they will publish.',
+  analytics: 'Real totals from Pinterest, last 30 days.',
+  settings: 'Account, connection and the app itself.',
 };
 
 function showScreen(name) {
-  if (name !== 'setup' && !state.hasKey) name = 'setup';
+  if (name !== 'setup' && !state.signedIn) name = 'setup';
   state.screen = name;
+  document.body.classList.toggle('auth-mode', name === 'setup');
   document.querySelectorAll('.screen').forEach((el) => el.classList.remove('active'));
   const el = $('screen-' + name);
   if (el) el.classList.add('active');
@@ -118,6 +130,7 @@ function showScreen(name) {
     btn.classList.toggle('active', btn.dataset.screen === name);
   });
   $('screen-title').textContent = TITLES[name] || '365 Pinterest';
+  $('screen-subtitle').textContent = SUBTITLES[name] || '';
   $('new-pin-btn').style.display = name === 'create' ? 'none' : '';
   if (location.hash !== '#/' + name) history.replaceState(null, '', '#/' + name);
   if (name === 'dashboard') renderDashboard();
@@ -154,8 +167,9 @@ async function loadBoards() {
 }
 
 /** Discover extra Pinterest accounts from pins (the REST API has no
- *  list-accounts endpoint for API keys). Each pin carries accountId; resolve
- *  each distinct id to a username via /api/v1/account?account_id=. */
+ *  list-accounts endpoint for sessions). Each pin carries accountId;
+ *  resolve each distinct id to a username via
+ *  /api/v1/account?account_id=. */
 async function discoverAccounts() {
   const found = new Map();
   if (state.account && state.account.pinterestUserId) {
@@ -203,15 +217,21 @@ function updateAccountChip() {
 }
 
 // ---------------------------------------------------------------------------
+// Skeletons (loading states that look like the content coming)
+// ---------------------------------------------------------------------------
+const SKEL_STAT = '<div class="stat-card"><span class="stat-icon-skel skel"></span><div class="skel skel-line-lg"></div><div class="skel skel-line-sm"></div></div>';
+const SKEL_CARD = '<div class="card skel-card"><div class="skel skel-line-md"></div><div class="skel skel-line-sm"></div><div class="skel skel-line-sm"></div></div>';
+
+// ---------------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------------
 async function renderDashboard() {
   const host = $('dashboard-content');
   if (!state.account) {
-    host.innerHTML = '<div class="loading">Loading your account…</div>';
+    host.innerHTML = `<div class="stat-grid">${SKEL_STAT.repeat(4)}</div><div class="grid-2">${SKEL_CARD}${SKEL_CARD}</div>`;
     await loadAllForDashboard();
     if (!state.account) {
-      host.innerHTML = '<div class="empty"><h3>Could not load your account</h3><p>Check the connection and try Refresh.</p></div>';
+      host.innerHTML = '<div class="empty"><div class="empty-icon">' + ic('analytics-01') + '</div><h3>Could not load your account</h3><p>Check the connection and try Refresh.</p></div>';
       return;
     }
   }
@@ -238,26 +258,26 @@ async function renderDashboard() {
   host.innerHTML = `
     ${state.account.needsReconnect ? '<div class="alert alert-error">Your Pinterest connection needs attention — sign in again on 365pinterest.com to reconnect it.</div>' : ''}
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-label">Boards</div><div class="stat-value">${fmtNum(state.account.boardCount)}</div><div class="stat-sub">on @${esc(state.account.username || '')}</div></div>
-      <div class="stat-card"><div class="stat-label">Pins saved</div><div class="stat-value">${fmtNum(totalPins)}</div><div class="stat-sub">drafts, scheduled and published</div></div>
-      <div class="stat-card"><div class="stat-label">Scheduled</div><div class="stat-value">${fmtNum(schedPins)}</div><div class="stat-sub">${fmtNum(queueTotal)} in the queue</div></div>
-      <div class="stat-card"><div class="stat-label">Published</div><div class="stat-value">${fmtNum(pubPins)}</div><div class="stat-sub">via 365 Pinterest</div></div>
+      <div class="stat-card"><span class="stat-icon">${ic('pin')}</span><div class="stat-value">${fmtNum(state.account.boardCount)}</div><div class="stat-label">Boards</div><div class="stat-sub">on @${esc(state.account.username || '')}</div></div>
+      <div class="stat-card"><span class="stat-icon">${ic('image-01')}</span><div class="stat-value">${fmtNum(totalPins)}</div><div class="stat-label">Pins saved</div><div class="stat-sub">drafts, scheduled and published</div></div>
+      <div class="stat-card"><span class="stat-icon">${ic('calendar-01')}</span><div class="stat-value">${fmtNum(schedPins)}</div><div class="stat-label">Scheduled</div><div class="stat-sub">${fmtNum(queueTotal)} in the queue</div></div>
+      <div class="stat-card"><span class="stat-icon">${ic('checkmark-circle-02')}</span><div class="stat-value">${fmtNum(pubPins)}</div><div class="stat-label">Published</div><div class="stat-sub">via 365 Pinterest</div></div>
     </div>
     <div class="grid-2">
       <div class="card">
-        <h3>Last 30 days</h3>
+        <div class="card-head"><span class="card-icon">${ic('analytics-01')}</span><h3>Last 30 days</h3></div>
         ${totals ? `
-        <div class="stat-grid mb-0">
-          <div><div class="stat-label">Impressions</div><div class="stat-value stat-value-sm">${fmtNum(totals.impressions)}</div></div>
-          <div><div class="stat-label">Pin clicks</div><div class="stat-value stat-value-sm">${fmtNum(totals.clicks)}</div></div>
-          <div><div class="stat-label">Saves</div><div class="stat-value stat-value-sm">${fmtNum(totals.saves)}</div></div>
-          <div><div class="stat-label">Outbound clicks</div><div class="stat-value stat-value-sm">${fmtNum(totals.outboundClicks)}</div></div>
+        <div class="mini-stats">
+          <div><div class="mini-value">${fmtNum(totals.impressions)}</div><div class="mini-label">Impressions</div></div>
+          <div><div class="mini-value">${fmtNum(totals.clicks)}</div><div class="mini-label">Pin clicks</div></div>
+          <div><div class="mini-value">${fmtNum(totals.saves)}</div><div class="mini-label">Saves</div></div>
+          <div><div class="mini-value">${fmtNum(totals.outboundClicks)}</div><div class="mini-label">Outbound clicks</div></div>
         </div>` : '<p class="muted">Analytics could not be loaded.</p>'}
         <p class="fineprint">${esc(analyticsNote)}</p>
         <p class="mt-12"><button class="btn btn-ghost" data-goto="analytics">Open full analytics →</button></p>
       </div>
       <div class="card">
-        <h3>Recent pins</h3>
+        <div class="card-head"><span class="card-icon">${ic('image-01')}</span><h3>Recent pins</h3></div>
         ${recent.length === 0
           ? '<p class="muted">No pins yet. Create your first pin and it will show up here.</p>'
           : `<div class="queue-list">${recent.map((p) => `
@@ -297,22 +317,22 @@ function fillBoardSelects() {
 async function renderBoards() {
   const host = $('boards-content');
   if (!state.boardsLoaded) {
-    host.innerHTML = '<div class="loading">Loading boards…</div>';
+    host.innerHTML = `<div class="board-grid">${'<div class="board-card skel-card"><div class="skel skel-cover"></div><div class="skel skel-line-md"></div><div class="skel skel-line-sm"></div></div>'.repeat(6)}</div>`;
     await loadBoards();
   }
   $('boards-subtitle').textContent = state.boards.length === 0
     ? 'Your Pinterest boards.'
     : `${state.boards.length} board${state.boards.length === 1 ? '' : 's'} on @${state.account ? state.account.username : ''}.`;
   if (state.boards.length === 0) {
-    host.innerHTML = `<div class="empty"><h3>No boards found</h3><p>Your Pinterest boards will appear here once the account is connected.<br>If you just connected Pinterest on the website, press Refresh.</p><button class="btn btn-primary" id="empty-new-board">${ic('plus-sign')} New board</button></div>`;
+    host.innerHTML = `<div class="empty"><div class="empty-icon">${ic('pin')}</div><h3>No boards found</h3><p>Your Pinterest boards will appear here once the account is connected.<br>If you just connected Pinterest on the website, press Refresh.</p><button class="btn btn-primary" id="empty-new-board">${ic('plus-sign')} New board</button></div>`;
     $('empty-new-board').addEventListener('click', openBoardModal);
     return;
   }
   host.innerHTML = `<div class="board-grid">${state.boards.map((b) => `
     <button class="board-card" data-board-id="${esc(b.id)}">
-      <div class="board-cover bc-${boardColorIndex(b.id)}">${esc((b.name || '?')[0].toUpperCase())}</div>
+      <div class="board-cover bc-${boardColorIndex(b.id)}"><span class="board-initial">${esc((b.name || '?')[0].toUpperCase())}</span><span class="board-privacy">${esc(b.privacy || 'PUBLIC')}</span></div>
       <div class="board-name">${esc(b.name)}</div>
-      <div class="board-meta">${fmtNum(b.pinCount)} pins · ${esc(b.privacy || 'PUBLIC')}</div>
+      <div class="board-meta">${fmtNum(b.pinCount)} pins</div>
       ${b.description ? `<div class="board-desc">${esc(b.description)}</div>` : ''}
     </button>`).join('')}</div>`;
   host.querySelectorAll('.board-card').forEach((card) => {
@@ -393,7 +413,7 @@ function pinCardHtml(p) {
 
 async function renderPins() {
   const host = $('pins-content');
-  host.innerHTML = '<div class="loading">Loading pins…</div>';
+  host.innerHTML = `<div class="pin-grid">${'<div class="pin-card skel-card"><div class="skel skel-thumb"></div><div class="pin-body"><div class="skel skel-line-md"></div><div class="skel skel-line-sm"></div></div></div>'.repeat(6)}</div>`;
   const res = await handleResult(await d.listPins({
     status: state.pinStatusFilter || undefined,
     boardId: state.pinBoardFilter || undefined,
@@ -401,7 +421,7 @@ async function renderPins() {
     accountId: activeAccountId(),
   }));
   if (!res) {
-    host.innerHTML = '<div class="empty"><h3>Pins could not be loaded</h3><p>Check the connection and try Refresh.</p></div>';
+    host.innerHTML = '<div class="empty"><div class="empty-icon">' + ic('image-01') + '</div><h3>Pins could not be loaded</h3><p>Check the connection and try Refresh.</p></div>';
     return;
   }
   state.pins = res.pins || [];
@@ -409,7 +429,7 @@ async function renderPins() {
   const list = filteredPins();
   document.querySelectorAll('#status-chips .chip').forEach((c) => c.classList.toggle('active', c.dataset.status === state.pinStatusFilter));
   if (list.length === 0) {
-    host.innerHTML = `<div class="empty"><h3>No pins here yet</h3><p>${state.pins.length === 0 ? 'Create your first pin — it takes a minute.' : 'Nothing matches these filters.'}</p><button class="btn btn-primary" data-goto="create">${ic('plus-sign')} New pin</button></div>`;
+    host.innerHTML = `<div class="empty"><div class="empty-icon">${ic('image-01')}</div><h3>No pins here yet</h3><p>${state.pins.length === 0 ? 'Create your first pin — it takes a minute.' : 'Nothing matches these filters.'}</p><button class="btn btn-primary" data-goto="create">${ic('plus-sign')} New pin</button></div>`;
   } else {
     host.innerHTML = `<p class="muted mb-12">Showing ${list.length} of ${fmtNum(state.pinsTotal)} pins.</p><div class="pin-grid">${list.map(pinCardHtml).join('')}</div>`;
   }
@@ -543,15 +563,15 @@ async function submitCreate(event) {
 // ---------------------------------------------------------------------------
 async function renderQueue() {
   const host = $('queue-content');
-  host.innerHTML = '<div class="loading">Loading the queue…</div>';
+  host.innerHTML = `<div class="queue-list">${'<div class="queue-item skel-card"><div class="skel skel-thumb-sm"></div><div style="flex:1"><div class="skel skel-line-md"></div><div class="skel skel-line-sm"></div></div></div>'.repeat(4)}</div>`;
   const data = await handleResult(await d.getQueue(activeAccountId()));
   if (!data) {
-    host.innerHTML = '<div class="empty"><h3>Queue could not be loaded</h3><p>Check the connection and try Refresh.</p></div>';
+    host.innerHTML = '<div class="empty"><div class="empty-icon">' + ic('calendar-01') + '</div><h3>Queue could not be loaded</h3><p>Check the connection and try Refresh.</p></div>';
     return;
   }
   state.queue = data.queue || [];
   if (state.queue.length === 0) {
-    host.innerHTML = '<div class="empty"><h3>Nothing scheduled</h3><p>Schedule a pin and it will appear here in publish order.<br>Scheduled pins are published automatically by the server.</p><button class="btn btn-primary" data-goto="create">' + ic('plus-sign') + ' New pin</button></div>';
+    host.innerHTML = `<div class="empty"><div class="empty-icon">${ic('calendar-01')}</div><h3>Nothing scheduled</h3><p>Schedule a pin and it will appear here in publish order.<br>Scheduled pins are published automatically by the server.</p><button class="btn btn-primary" data-goto="create">${ic('plus-sign')} New pin</button></div>`;
     return;
   }
   host.innerHTML = `<p class="muted mb-12">${state.queue.length} pin${state.queue.length === 1 ? '' : 's'} waiting to publish.</p>
@@ -626,30 +646,30 @@ async function submitSchedule() {
 // ---------------------------------------------------------------------------
 async function renderAnalytics() {
   const host = $('analytics-content');
-  host.innerHTML = '<div class="loading">Loading analytics…</div>';
+  host.innerHTML = `<div class="stat-grid">${SKEL_STAT.repeat(4)}</div>${SKEL_CARD}`;
   const data = await handleResult(await d.getAnalytics(activeAccountId()));
   if (!data) {
-    host.innerHTML = '<div class="empty"><h3>Analytics could not be loaded</h3><p>Check the connection and try Refresh.</p></div>';
+    host.innerHTML = '<div class="empty"><div class="empty-icon">' + ic('analytics-01') + '</div><h3>Analytics could not be loaded</h3><p>Check the connection and try Refresh.</p></div>';
     return;
   }
   $('analytics-subtitle').textContent = data.connected
     ? `Last 30 days · ${fmtDateShort(data.startDate)} – ${fmtDateShort(data.endDate)} · from Pinterest`
     : 'Last 30 days, from Pinterest.';
   if (!data.connected) {
-    host.innerHTML = '<div class="empty"><h3>No Pinterest account connected</h3><p>Connect a Pinterest account on 365pinterest.com first — analytics appear here once it is linked.</p></div>';
+    host.innerHTML = '<div class="empty"><div class="empty-icon">' + ic('analytics-01') + '</div><h3>No Pinterest account connected</h3><p>Connect a Pinterest account on 365pinterest.com first — analytics appear here once it is linked.</p></div>';
     return;
   }
   const t = data.totals;
   const allZero = !t.impressions && !t.clicks && !t.saves && !t.outboundClicks;
   host.innerHTML = `
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-label">Impressions</div><div class="stat-value">${fmtNum(t.impressions)}</div><div class="stat-sub">times pins were seen</div></div>
-      <div class="stat-card"><div class="stat-label">Pin clicks</div><div class="stat-value">${fmtNum(t.clicks)}</div><div class="stat-sub">clicks on pins</div></div>
-      <div class="stat-card"><div class="stat-label">Saves</div><div class="stat-value">${fmtNum(t.saves)}</div><div class="stat-sub">pins saved by others</div></div>
-      <div class="stat-card"><div class="stat-label">Outbound clicks</div><div class="stat-value">${fmtNum(t.outboundClicks)}</div><div class="stat-sub">clicks through to your links</div></div>
+      <div class="stat-card"><span class="stat-icon">${ic('analytics-01')}</span><div class="stat-value">${fmtNum(t.impressions)}</div><div class="stat-label">Impressions</div><div class="stat-sub">times pins were seen</div></div>
+      <div class="stat-card"><span class="stat-icon">${ic('image-01')}</span><div class="stat-value">${fmtNum(t.clicks)}</div><div class="stat-label">Pin clicks</div><div class="stat-sub">clicks on pins</div></div>
+      <div class="stat-card"><span class="stat-icon">${ic('pin')}</span><div class="stat-value">${fmtNum(t.saves)}</div><div class="stat-label">Saves</div><div class="stat-sub">pins saved by others</div></div>
+      <div class="stat-card"><span class="stat-icon">${ic('link-01')}</span><div class="stat-value">${fmtNum(t.outboundClicks)}</div><div class="stat-label">Outbound clicks</div><div class="stat-sub">clicks through to your links</div></div>
     </div>
     <div class="card">
-      <h3>About these numbers</h3>
+      <div class="card-head"><span class="card-icon">${ic('analytics-01')}</span><h3>About these numbers</h3></div>
       <p class="muted">These are the real totals Pinterest reports for the last 30 days — nothing is estimated or filled in. Pinterest data lags a day or two, so a new account or a quiet week can honestly read zero.</p>
       ${allZero ? '<p class="muted mt-8">All zeros right now. If your pins are already published, give Pinterest a day or two to report them.</p>' : ''}
     </div>`;
@@ -663,33 +683,29 @@ async function renderSettings() {
   const info = await d.getInfo();
   const accounts = state.accounts;
   const selected = activeAccountId();
+  const who = state.user && state.user.email
+    ? (state.user.name ? `${state.user.name} (${state.user.email})` : state.user.email)
+    : 'Signed in';
   host.innerHTML = `
   <div class="settings-list">
     <div class="card">
-      <h3>Connection</h3>
+      <div class="card-head"><span class="card-icon">${ic('user-switch')}</span><h3>Account</h3></div>
       <div class="settings-row">
         <div>
-          <div><strong>Signed in as</strong> — ${state.user && state.user.email ? esc(state.user.name ? `${state.user.name} (${state.user.email})` : state.user.email) : 'API key (email not recorded)'}</div>
-          <div class="kv">Signed in with the same account as the website.</div>
+          <div><strong>Signed in as</strong> — ${esc(who)}</div>
+          <div class="kv">Signed in with the same account as the website. Your session stays signed in on this computer until it expires or you sign out — nothing secret is stored by the app.</div>
         </div>
-      </div>
-      <div class="settings-row mt-12">
-        <div>
-          <div><strong>API key</strong> — ${state.hasKey ? 'saved' : 'not set'}</div>
-          <div class="kv">Stored ${info.keyMethod === 'safeStorage' ? 'encrypted (system keychain)' : info.keyMethod === 'safeStorage-plaintext' ? 'with basic encryption on this computer' : 'on this computer'} · never leaves the app except to 365pinterest.com</div>
-        </div>
-        <button class="btn btn-secondary" id="settings-change-key">Change key</button>
       </div>
       <div class="settings-row mt-12">
         <div>
           <div><strong>Sign out</strong></div>
-          <div class="kv">Revokes the app's API key and removes the saved sign-in from this computer. Your pins and boards stay on your account.</div>
+          <div class="kv">Ends your session on the server and removes the sign-in from this computer. Your pins and boards stay on your account.</div>
         </div>
-        <button class="btn btn-danger" id="settings-signout">Sign out</button>
+        <button class="btn btn-danger" id="settings-signout"><span class="hicon">${ic('logout-01')}</span>Sign out</button>
       </div>
     </div>
     <div class="card">
-      <h3>Pinterest accounts</h3>
+      <div class="card-head"><span class="card-icon">${ic('pin')}</span><h3>Pinterest accounts</h3></div>
       <p class="muted">The app uses your newest connected account by default. Other accounts are found from the pins already saved under them.</p>
       <div class="account-list">
         ${accounts.length === 0 ? '<p class="muted">No accounts discovered yet — open the Dashboard first.</p>' : accounts.map((a) => `
@@ -701,14 +717,14 @@ async function renderSettings() {
       <p class="fineprint">An account with no pins yet will not appear here. To use one, connect it on the website, save a pin under it, and refresh.</p>
     </div>
     <div class="card">
-      <h3>Appearance</h3>
+      <div class="card-head"><span class="card-icon">${ic('moon-02')}</span><h3>Appearance</h3></div>
       <div class="settings-row">
         <div><strong>Theme</strong><div class="kv">Light or dark — Ctrl+D toggles it any time.</div></div>
         <button class="btn btn-secondary" id="settings-theme">${state.settings.theme === 'dark' ? 'Switch to light' : 'Switch to dark'}</button>
       </div>
     </div>
     <div class="card">
-      <h3>About</h3>
+      <div class="card-head"><span class="card-icon">${ic('home-01')}</span><h3>About</h3></div>
       <div class="kv">365 Pinterest <strong>${esc(info.version)}</strong> · ${esc(info.platform)} · © ${new Date().getFullYear()} Anjum Labs</div>
       <div class="kv mt-6">Desktop client for <button class="linklike" data-open-external="https://365pinterest.com">365pinterest.com</button> — <button class="linklike" data-open-external="https://365pinterest.com/developers">API documentation</button></div>
       <div class="mt-12"><button class="btn btn-secondary" id="settings-check-updates">Check for updates</button> <button class="btn btn-secondary hidden" id="settings-download-update">${ic('download-01')} Download update</button> <button class="btn btn-primary hidden" id="settings-restart-update">Restart to install</button></div>
@@ -716,10 +732,9 @@ async function renderSettings() {
     </div>
   </div>`;
 
-  $('settings-change-key').addEventListener('click', () => showScreen('setup'));
   $('settings-signout').addEventListener('click', async () => {
     await d.signOut();
-    state.hasKey = false;
+    state.signedIn = false;
     state.user = null;
     state.account = null;
     state.accounts = [];
@@ -834,12 +849,11 @@ async function toggleTheme() {
 }
 
 // ---------------------------------------------------------------------------
-// Setup — same sign-in as the website (v2.1.0)
+// Sign-in — same sign-in as the website (v2.2.0: session, no keys)
 // ---------------------------------------------------------------------------
 // Email + password: the password is only sent to 365pinterest.com inside
-// the sign-in request — it is never stored or logged. On success the main
-// process mints a desktop API key from the session, so the app then works
-// exactly like the paste-key flow.
+// the sign-in request — it is never stored or logged. On success the
+// main process confirms the session and the app signs in with it.
 async function submitEmailSignIn(event) {
   event.preventDefault();
   const errEl = $('setup-error');
@@ -866,7 +880,7 @@ async function submitEmailSignIn(event) {
     return;
   }
   state.user = res.user || null;
-  state.hasKey = true;
+  state.signedIn = true;
   state.account = null;
   state.boardsLoaded = false;
   $('signin-password').value = '';
@@ -891,37 +905,10 @@ async function submitPinterestSignIn() {
     return;
   }
   state.user = res.user || null;
-  state.hasKey = true;
+  state.signedIn = true;
   state.account = null;
   state.boardsLoaded = false;
   showToast('Signed in with Pinterest.');
-  await loadAllForDashboard();
-  showScreen('dashboard');
-}
-
-async function submitSetup() {
-  const key = $('api-key-input').value.trim();
-  const errEl = $('setup-error');
-  errEl.classList.add('hidden');
-  if (!key) { errEl.textContent = 'Paste your API key first.'; errEl.classList.remove('hidden'); return; }
-  const btn = $('validate-key-btn');
-  btn.disabled = true;
-  btn.textContent = 'Validating…';
-  const res = await d.validateKey(key);
-  btn.disabled = false;
-  btn.textContent = 'Validate & connect';
-  if (!res || !res.ok) {
-    errEl.textContent = (res && res.error) || 'Could not validate the key.';
-    errEl.classList.remove('hidden');
-    return;
-  }
-  state.user = null; // paste-key flow: no identity recorded
-  state.hasKey = true;
-  state.account = res.data;
-  state.boardsLoaded = false;
-  $('api-key-input').value = '';
-  updateAccountChip();
-  showToast(res.data.connected ? `Connected as @${res.data.username}.` : 'Key saved — no Pinterest account connected yet.');
   await loadAllForDashboard();
   showScreen('dashboard');
 }
@@ -956,6 +943,7 @@ function wireEvents() {
     const ext = e.target.closest('[data-open-external]');
     if (ext && !ext.dataset.bound) d.openExternal(ext.dataset.openExternal);
   });
+  $('sidebar-new-pin').addEventListener('click', () => go('create'));
   $('new-pin-btn').addEventListener('click', () => go('create'));
   $('refresh-btn').addEventListener('click', refreshCurrent);
   $('theme-toggle').addEventListener('click', toggleTheme);
@@ -967,14 +955,6 @@ function wireEvents() {
     state.updateBannerDismissedFor = state.update.version;
     $('update-banner').classList.add('hidden');
   });
-  $('toggle-key-visibility').addEventListener('click', () => {
-    const input = $('api-key-input');
-    const show = input.type === 'password';
-    input.type = show ? 'text' : 'password';
-    $('toggle-key-visibility').textContent = show ? 'Hide' : 'Show';
-  });
-  $('validate-key-btn').addEventListener('click', submitSetup);
-  $('api-key-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitSetup(); });
 
   // Pins filters
   document.querySelectorAll('#status-chips .chip').forEach((chip) => {
@@ -1031,8 +1011,10 @@ async function boot() {
   $('version-label').textContent = `365 Pinterest v${state.version}`;
   state.settings = { theme: 'light', accountId: null, ...(await d.getSettings()) };
   applyTheme();
-  state.hasKey = await d.hasKey();
-  state.user = await d.getUser();
+  // The live session is the authority: ask the server who is signed in.
+  const sess = await d.getSession();
+  state.signedIn = !!(sess && sess.signedIn);
+  state.user = (sess && sess.user) || null;
   const us = await d.getUpdateState();
   if (us) {
     state.update = {
@@ -1046,7 +1028,7 @@ async function boot() {
   renderUpdateUI();
   const hash = (location.hash || '').replace('#/', '');
   const start = ['dashboard', 'boards', 'pins', 'create', 'queue', 'analytics', 'settings'].includes(hash) ? hash : 'dashboard';
-  if (!state.hasKey) {
+  if (!state.signedIn) {
     showScreen('setup');
     return;
   }

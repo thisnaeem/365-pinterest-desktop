@@ -2,9 +2,10 @@
 /**
  * 365 Pinterest — preload (sandboxed, context-isolated).
  *
- * The renderer gets a narrow, promise-based bridge. It never sees the API
- * key, never touches the network, and never gets Node APIs. All API traffic
- * goes through the main process.
+ * The renderer gets a narrow, promise-based bridge. It never sees any
+ * credential, never touches the network, and never gets Node APIs. All
+ * API traffic goes through the main process, authenticated with the
+ * signed-in session cookie. There are no API keys in this app at all.
  */
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -27,9 +28,7 @@ contextBridge.exposeInMainWorld('desktop', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
 
-  hasKey: () => ipcRenderer.invoke('auth:hasKey'),
-  validateKey: (key) => ipcRenderer.invoke('auth:validate', key),
-  clearKey: () => ipcRenderer.invoke('auth:clear'),
+  getSession: () => ipcRenderer.invoke('auth:getSession'),
   signInEmail: (email, password) => ipcRenderer.invoke('auth:signInEmail', email, password),
   signInPinterest: () => ipcRenderer.invoke('auth:signInPinterest'),
   signOut: () => ipcRenderer.invoke('auth:signOut'),
