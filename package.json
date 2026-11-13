@@ -9,6 +9,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "renderer/**/*",
       "package.json",
       "scripts/selftest.js"
     ],
@@ -30,14 +31,6 @@
       "shortcutName": "365 Pinterest"
     },
     "productName": "365 Pinterest",
-    "protocols": [
-      {
-        "name": "365 Pinterest",
-        "schemes": [
-          "pinterest365"
-        ]
-      }
-    ],
     "publish": [
       {
         "owner": "thisnaeem",
@@ -54,7 +47,7 @@
   "dependencies": {
     "electron-updater": "^6.3.0"
   },
-  "description": "365 Pinterest desktop app (Electron) \u2014 Pinterest automation: schedule pins, manage boards, write AI blogs and auto-pin them. Wraps https://365pinterest.com.",
+  "description": "365 Pinterest desktop app (Electron) \u2014 native desktop client for 365pinterest.com: boards, pins, scheduling, queue and analytics over the 365 Pinterest REST API.",
   "devDependencies": {
     "electron": "^32.0.0",
     "electron-builder": "^25.0.0"
@@ -69,7 +62,8 @@
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
     "pack": "electron-builder --dir",
-    "start": "electron ."
+    "start": "electron .",
+    "selftest": "electron scripts/selftest.js"
   },
-  "version": "1.0.0"
+  "version": "2.0.0"
 }

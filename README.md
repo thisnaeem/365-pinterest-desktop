@@ -1,129 +1,116 @@
 # 365 Pinterest — Desktop App
 
-Electron wrapper for the 365 Pinterest web app — Pinterest automation:
-schedule pins, manage boards, write AI blogs and auto-pin them.
+Native desktop client for 365 Pinterest — Pinterest automation: schedule
+pins, manage boards, write AI blogs and auto-pin them.
 
-- **Site:** https://365pinterest.com (the app loads the live site; there is no local UI)
-- **Platforms:** Windows + macOS (Linux AppImage also builds, same pipeline)
-- **Version:** 1.0.0 · **Company:** Anjum Labs
-- **Pattern:** same as Screen Recorder Pro (`~/workspace/your_files/screen-recorder-pro/`) — Electron 32 + electron-builder 25, GitHub Actions matrix build, GitHub Releases publish on version tags.
+- **Site:** https://365pinterest.com
+- **Platforms:** Windows (v2.0.0 — Windows only for now)
+- **Version:** 2.0.0 · **Company:** Anjum Labs
+
+## v2.0.0 — a real native app, not a website wrapper
+
+v1.0.0 loaded https://365pinterest.com inside an Electron window. v2.0.0
+replaces that with its own local interface (`renderer/`) and talks to the
+365 Pinterest REST API (`https://365pinterest.com/api/v1/...`) with the
+user's API key. Nothing in the app is a web page; the website is only ever
+opened in the user's real browser for sign-up, billing and docs.
+
+### Screens
+
+Setup (paste API key, validate) · Dashboard (account, counts, 30-day
+totals, recent pins) · Boards (grid + create) · Pins (status/board/search
+filters, schedule/reschedule/cancel) · New pin (file upload or image URL,
+schedule or draft) · Queue (scheduled pins in publish order) · Analytics
+(real 30-day Pinterest totals) · Settings (key, accounts, theme, updates).
+
+### API (verified against the web-app source, `~/workspace/pinterest-365/`)
+
+Auth: `Authorization: Bearer pk_live_…`, 60 requests/minute per key.
+Create-pin has an extra 30/minute cap; image uploads cap at 10 MB.
+
+- `GET /api/v1/account` — connection status, username, board count
+- `GET /api/v1/boards` · `POST /api/v1/boards` — list / create boards
+- `GET /api/v1/pins` — list (status, board, limit filters)
+- `POST /api/v1/pins` — JSON with an image URL, or multipart with a `file`
+  (JPEG/PNG/WebP ≤ 10 MB — the server uploads it to Cloudinary; no
+  Cloudinary keys live in this app). A future `scheduledFor` makes the pin
+  SCHEDULED (the server's 5-minute cron publishes it); otherwise DRAFT.
+  Creation never publishes directly.
+- `POST /api/v1/pins/{id}/schedule` · `POST /api/v1/pins/{id}/cancel`
+- `GET /api/v1/queue` — scheduled pins in publish order
+- `GET /api/v1/analytics` — last-30-day totals (impressions, saves,
+  clicks, outbound clicks)
+
+`account_id` works on every endpoint for multi-account use. The REST API
+has no list-accounts endpoint for API keys (that route needs a browser
+session), so the app discovers extra accounts from the `accountId` field
+on listed pins and resolves each one via `/api/v1/account?account_id=`.
+
+Honest gaps (the API simply does not offer these): no publish-now and no
+pin delete via REST; no board cover images (boards have no image field —
+the grid uses initials); analytics are 30-day totals only and Pinterest
+data lags a day or two. Writes return 402 when the account is read-only.
+
+### Auth + key storage
+
+The API key lives in the main process only and is stored with Electron
+`safeStorage` (DPAPI on Windows) in the app's userData directory. The
+renderer never sees the key and it is never logged. The v1 deep link
+(`pinterest365://`) is gone — API-key auth makes it unnecessary.
 
 ## Run (dev)
 
 ```bash
 npm install
-npm start            # loads https://365pinterest.com
+npm start            # native UI; needs an API key from 365pinterest.com
+npm run selftest     # UI self-test under xvfb (see below)
 ```
 
-## Build installers (local)
+## Build the Windows installer (local)
 
 ```bash
-npm run build:win    # NSIS .exe — needs wine on Linux; use GitHub Actions instead
-npm run build:mac    # .dmg (unsigned — see below)
-npm run build:linux  # AppImage (works on this Linux sandbox)
-npm run pack         # unpacked dir, for a quick launch test
+PATH=/tmp/wine-shim:$PATH npm run build:win -- --publish never
 ```
 
-## Release (GitHub Actions)
+Windows builds need wine on this Linux box: wine64 + wine32 are installed
+with workarounds (libzstd downgrade, `/tmp/wine-shim` with `wine`/`wine64`
+shims exec'ing `/usr/lib/wine/wine64`, rcedit-ia32.exe swapped for x64 in
+`~/.cache/electron-builder`, `node_modules/app-builder-lib` NsisTarget.js
+patched to use the pure-JS UninstallerReader first). Wine and the shim
+live outside `~`, so a VM restart means reinstalling them; the
+node_modules patch persists. Output: `dist/365-Pinterest-Setup-2.0.0.exe`
+(NSIS installer) + `dist/latest.yml` (auto-updater metadata).
 
-1. **Create the repo first (manual, GitHub web UI):** `thisnaeem/365-pinterest-desktop`.
-   GitHub MCP cannot create repos or push workflow files — create the repo in
-   the browser, then push this project (per-file push via MCP works).
-2. Push a version tag, e.g. `v1.0.0`:
-   ```bash
-   git tag v1.0.0 && git push origin v1.0.0
-   ```
-3. The `Build` workflow (`.github/workflows/build.yml`) builds Windows +
-   macOS + Linux in parallel and publishes the installers + `latest.yml`
-   update metadata to that GitHub Release. The app's auto-updater checks
-   that release (same pattern as Screen Recorder Pro).
-4. A manual workflow run builds without publishing (artifacts only).
+The auto-updater still points at the same GitHub repo
+(`thisnaeem/365-pinterest-desktop`, release type `release`). Nothing in
+this repo publishes automatically — releases are made by hand.
 
-## Authentication — how it works (and what was tested)
+## Self-test
 
-The app uses **one persistent session partition** (`persist:365-pinterest`).
-Cookies + localStorage are stored in the OS user-data directory and survive
-restarts, so a signed-in user stays signed in — exactly like a normal
-browser. There is no separate desktop login; the website's own sign-in is
-used, in-window.
+`npm run selftest` launches the real app under Xvfb with
+`PINTEREST365_SELFTEST=1` (env-gated code in `main.js`, never runs in
+production). It checks:
 
-- **Email + password** — works in-window (better-auth). Tested: wrong
-  credentials show the site's own error; correct credentials sign in and
-  the session persists across restarts (see `scripts/selftest.js`).
-- **Pinterest sign-in** — works in-window. The app redirects to
-  `www.pinterest.com/oauth` with the site's own app id and scopes; Pinterest
-  allows webview sign-in. Tested: the authorize page loads in-window.
-- **Google sign-in** — in-window, with a plain Chrome user-agent (no
-  `Electron/` token) so Google treats the window as a normal browser.
-  **Current status (13 Nov 2026): BROKEN ON THE SERVER, not in the app.**
-  `POST /api/auth/sign-in/social` returns HTTP 500 on the live site —
-  the Google client id/secret are not set in the live Worker secrets and
-  the callback is not registered in Google Cloud Console. Until that is
-  fixed, Google sign-in fails on the web too. Once fixed, the desktop
-  flow works unchanged.
-- **System-browser fallback** — if Google ever blocks the in-window flow
-  ("This browser or app may not be secure"), the app detects that page and
-  offers to finish sign-in in the system browser. The session then comes
-  back via the `pinterest365://auth?token=...` deep link, which plants the
-  better-auth session cookie in the app's own partition. The server side
-  of that loop is prepared in `server-handoff-route/route.ts` but **NOT
-  deployed** — it is only needed if in-window Google is ever blocked.
-- **External links** (Polar checkout, docs, blog, social) open in the
-  user's real browser, never inside the app. OAuth popups stay in-app.
+1. The Setup screen renders and the page is a local file (not the website).
+2. A fake API key against the LIVE API returns 401 — proving the client
+   reaches the real endpoint and handles auth failure.
+3. Every screen (Dashboard, Boards, Pins, New pin, Queue, Analytics,
+   Settings, dark theme) renders with stubbed API responses, because no
+   real API key exists on this machine — authenticated calls against the
+   live server are NOT exercised end to end.
 
-## Auth test results (13 Nov 2026, Linux sandbox, xvfb)
-
-Probe harness: `scripts/selftest.js` (`--selftest=probe` / `persist-set` /
-`persist-check`). Full JSON + screenshots in `test-output/` (dev run) and
-`test-output/packaged/` (run inside the packaged app). Summary:
-
-| Path | Result |
-|---|---|
-| Sign-in page loads in-app | ✅ 200 — email/password form + "Continue with Google" + "Continue with Pinterest" all present, rendered correctly |
-| Email+password (wrong creds) | ✅ site's own "Invalid email or password" shown — the auth path posts and responds end-to-end in-app |
-| Pinterest OAuth | ✅ "Continue with Pinterest" → `pinterest.com/oauth` → Pinterest "Welcome to Pinterest" login page loads in-window (client_id 1527228, full scopes, `login.*` state) |
-| Google sign-in | ❌ clicking "Continue with Google" does nothing — `POST /api/auth/sign-in/social` returns HTTP 500 on the live site (server-side, see above) |
-| Session persists across restart | ✅ marker cookie set in one launch, found after a full restart (dev and packaged app both verified) |
-
-A full successful sign-in was not completed in the sandbox: no test
-account credentials are available to the builder (no passwords for the
-`muse-verify-*` / `oauth-test` accounts exist anywhere in the repo, and
-the reviewer account's password is in the Secure Vault, which cannot be
-typed into Electron). The user signs in with his own account on first
-launch — the session then persists via the mechanism proven above.
-
-Sandbox notes (do not mistake for app bugs): the sandbox's egress proxy
-intercepts TLS with its own CA, which stock Electron does not trust, so
-the first probe run hit `ERR_CERT_AUTHORITY_INVALID` on pinterest.com
-— the re-runs used `--ignore-certificate-errors` (test-only flag). On a
-real Windows/Mac machine, real certificates validate normally. Electron
-also needs `--no-sandbox` when run as root in this sandbox; irrelevant
-on user machines.
-
-## Local build limits (why Actions builds the real installers)
-
-- **Linux AppImage** — builds here. ✅ `dist/365 Pinterest-1.0.0.AppImage`
-- **macOS .app (zip)** — builds here (unsigned). ✅ `dist/365 Pinterest-1.0.0-mac.zip`
-- **macOS .dmg** — CANNOT build on Linux: `dmg-license` is a darwin-only
-  module. The .dmg comes from the macOS Actions runner.
-- **Windows (.exe, NSIS or zip)** — CANNOT build on Linux: electron-builder
-  requires wine for every Windows target (exe stamping/signing). The
-  installer comes from the Windows Actions runner.
-- **macOS signing/notarization** — CI builds are **unsigned** (no Apple
-  Developer certificate in the pipeline — same as Screen Recorder Pro
-  v1.0.1). On first launch macOS shows Gatekeeper; open with right-click
-  → Open. To ship a signed + notarized .dmg, add an Apple Developer
-  certificate + `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` /
-  `APPLE_TEAM_ID` secrets to the repo (electron-builder `notarize`
-  config) — that step needs Naeem's Apple Developer account.
+Screenshots + `selftest.json` land in `test-output/v2/`.
 
 ## Files
 
-- `main.js` — window, navigation policy, OAuth handling, deep link,
-  menus, auto-update, self-test hook
-- `preload.js` — minimal context bridge (version + update checks only)
-- `scripts/selftest.js` — auth probe + persistence test harness
-- `build/icon.png` — the real 365 logo (512×512, from the web repo)
-- `server-handoff-route/route.ts` — prepared server route for the
-  system-browser sign-in fallback (NOT deployed)
-- `.github/workflows/build.yml` — Windows + macOS + Linux build/publish
+- `main.js` — window, menus, auto-update, API client, key storage (safeStorage), IPC, self-test hook
+- `preload.js` — narrow context bridge (API calls go through main; the renderer never sees the key)
+- `renderer/` — the native UI: `index.html`, `styles.css`, `app.js`, `icon.png`, `fonts/` (Unbounded, bundled)
+- `scripts/selftest.js` — self-test launcher
+- `build/icon.png` — the real 365 logo (512×512)
+
+## v1.0.0 (retired wrapper — do not revive)
+
+v1 loaded the website in an Electron window with a persistent session
+partition. It is superseded by v2.0.0. The v1.0.0 GitHub release stays
+published as-is; v2 ships as a new 2.0.0 release when Naeem says so.

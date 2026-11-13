@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'none'">
+<title>365 Pinterest</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <img class="brand-logo" src="icon.png" alt="365 Pinterest logo" onerror="this.style.display='none'">
+      <div class="brand-text"><span class="brand-num">365</span> <span class="brand-name">Pinterest</span></div>
+    </div>
+    <nav id="nav">
+      <button class="nav-item" data-screen="dashboard"><span class="nav-icon">▦</span><span>Dashboard</span></button>
+      <button class="nav-item" data-screen="boards"><span class="nav-icon">▤</span><span>Boards</span></button>
+      <button class="nav-item" data-screen="pins"><span class="nav-icon">▧</span><span>Pins</span></button>
+      <button class="nav-item" data-screen="create"><span class="nav-icon">＋</span><span>New pin</span></button>
+      <button class="nav-item" data-screen="queue"><span class="nav-icon">◷</span><span>Queue</span></button>
+      <button class="nav-item" data-screen="analytics"><span class="nav-icon">↗</span><span>Analytics</span></button>
+      <button class="nav-item" data-screen="settings"><span class="nav-icon">⚙</span><span>Settings</span></button>
+    </nav>
+    <div class="sidebar-foot">
+      <div id="account-chip" class="account-chip hidden">
+        <div class="account-avatar" id="account-avatar">?</div>
+        <div class="account-meta">
+          <div class="account-name" id="account-name">—</div>
+          <div class="account-sub" id="account-sub">Pinterest</div>
+        </div>
+      </div>
+      <div class="version" id="version-label">365 Pinterest</div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header id="topbar">
+      <h1 id="screen-title">Dashboard</h1>
+      <div class="topbar-actions">
+        <button id="theme-toggle" class="btn btn-ghost" title="Toggle dark theme (Ctrl+D)">Dark</button>
+        <button id="refresh-btn" class="btn btn-ghost" title="Refresh (Ctrl+R)">Refresh</button>
+        <button id="new-pin-btn" class="btn btn-primary">＋ New pin</button>
+      </div>
+    </header>
+
+    <div id="global-error" class="alert alert-error hidden" role="alert"></div>
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- SETUP -->
+    <section id="screen-setup" class="screen">
+      <div class="setup-card">
+        <img class="setup-logo" src="icon.png" alt="365 Pinterest logo" onerror="this.style.display='none'">
+        <h2>Connect your 365 Pinterest account</h2>
+        <p class="muted">This desktop app talks to 365 Pinterest with an API key. Your key is stored encrypted on this computer and is never sent anywhere except 365pinterest.com.</p>
+        <ol class="steps">
+          <li>Open <button class="linklike" data-open-external="https://365pinterest.com/developers">365pinterest.com/developers</button> in your browser and sign in.</li>
+          <li>Create an API key (Pro feature) and copy it — it is shown only once.</li>
+          <li>Paste it below and click Validate.</li>
+        </ol>
+        <label class="field-label" for="api-key-input">API key</label>
+        <div class="key-row">
+          <input id="api-key-input" class="input" type="password" placeholder="pk_live_…" autocomplete="off" spellcheck="false">
+          <button id="toggle-key-visibility" class="btn btn-ghost" title="Show key">Show</button>
+        </div>
+        <div id="setup-error" class="alert alert-error hidden"></div>
+        <button id="validate-key-btn" class="btn btn-primary btn-block">Validate &amp; connect</button>
+        <p class="fineprint">Keys are per-account and can be revoked any time from the website. The app makes at most 60 requests per minute.</p>
+      </div>
+    </section>
+
+    <!-- DASHBOARD -->
+    <section id="screen-dashboard" class="screen">
+      <div id="dashboard-content"></div>
+    </section>
+
+    <!-- BOARDS -->
+    <section id="screen-boards" class="screen">
+      <div class="section-head">
+        <div>
+          <p class="muted" id="boards-subtitle">Your Pinterest boards.</p>
+        </div>
+        <button id="new-board-btn" class="btn btn-primary">＋ New board</button>
+      </div>
+      <div id="boards-content"></div>
+    </section>
+
+    <!-- PINS -->
+    <section id="screen-pins" class="screen">
+      <div class="section-head">
+        <div>
+          <p class="muted">Every pin saved in your account.</p>
+        </div>
+      </div>
+      <div class="filters">
+        <div class="chip-row" id="status-chips">
+          <button class="chip active" data-status="">All</button>
+          <button class="chip" data-status="DRAFT">Drafts</button>
+          <button class="chip" data-status="SCHEDULED">Scheduled</button>
+          <button class="chip" data-status="PUBLISHED">Published</button>
+          <button class="chip" data-status="FAILED">Failed</button>
+        </div>
+        <select id="pins-board-filter" class="select"><option value="">All boards</option></select>
+        <input id="pins-search" class="input" type="search" placeholder="Search pins…" aria-label="Search pins">
+      </div>
+      <div id="pins-content"></div>
+    </section>
+
+    <!-- CREATE PIN -->
+    <section id="screen-create" class="screen">
+      <div class="section-head">
+        <div>
+          <p class="muted">Create a draft, or schedule it — the server publishes scheduled pins on time.</p>
+        </div>
+      </div>
+      <form id="create-form" class="form-card" novalidate>
+        <div class="form-grid">
+          <div class="form-col">
+            <label class="field-label" for="pin-title">Title <span class="req">*</span></label>
+            <input id="pin-title" class="input" type="text" maxlength="100" placeholder="Pin title" required>
+            <div class="char-count"><span id="title-count">0</span>/100</div>
+
+            <label class="field-label" for="pin-description">Description</label>
+            <textarea id="pin-description" class="input" rows="4" maxlength="800" placeholder="What is this pin about?"></textarea>
+            <div class="char-count"><span id="desc-count">0</span>/800</div>
+
+            <label class="field-label" for="pin-destination">Destination link</label>
+            <input id="pin-destination" class="input" type="url" placeholder="https://example.com/article">
+
+            <label class="field-label" for="pin-board">Board <span class="req">*</span></label>
+            <select id="pin-board" class="select" required><option value="">Choose a board…</option></select>
+
+            <label class="field-label" for="pin-scheduled">Schedule for (optional)</label>
+            <input id="pin-scheduled" class="input" type="datetime-local">
+            <p class="fineprint">Leave empty to save as a draft. Scheduled pins are published automatically by the server — a pin is never published the moment you create it.</p>
+          </div>
+          <div class="form-col">
+            <label class="field-label">Image <span class="req">*</span></label>
+            <div id="image-drop" class="image-drop">
+              <div id="image-preview-empty">
+                <div class="image-drop-icon">▧</div>
+                <p><strong>Choose an image</strong> from your computer<br>JPEG, PNG or WebP — up to 10 MB</p>
+                <button type="button" id="pick-image-btn" class="btn btn-secondary">Browse files</button>
+                <p class="fineprint">or paste an image URL below</p>
+              </div>
+              <img id="image-preview" class="hidden" alt="Selected pin image">
+            </div>
+            <div id="image-file-info" class="fineprint hidden"></div>
+            <button type="button" id="clear-image-btn" class="btn btn-ghost hidden">Remove image</button>
+            <label class="field-label" for="pin-image-url">Image URL (instead of a file)</label>
+            <input id="pin-image-url" class="input" type="url" placeholder="https://…/image.jpg">
+            <p class="fineprint">Must be an https URL ending in .jpg, .jpeg, .png or .webp.</p>
+          </div>
+        </div>
+        <div id="create-error" class="alert alert-error hidden"></div>
+        <div class="form-actions">
+          <button type="button" id="create-reset-btn" class="btn btn-ghost">Clear</button>
+          <button type="submit" id="create-submit-btn" class="btn btn-primary">Save pin</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- QUEUE -->
+    <section id="screen-queue" class="screen">
+      <div class="section-head">
+        <div>
+          <p class="muted">Scheduled pins, in the order they will publish.</p>
+        </div>
+      </div>
+      <div id="queue-content"></div>
+    </section>
+
+    <!-- ANALYTICS -->
+    <section id="screen-analytics" class="screen">
+      <div class="section-head">
+        <div>
+          <p class="muted" id="analytics-subtitle">Last 30 days, from Pinterest.</p>
+        </div>
+      </div>
+      <div id="analytics-content"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="screen-settings" class="screen">
+      <div class="section-head">
+        <div>
+          <p class="muted">Connection, accounts and the app itself.</p>
+        </div>
+      </div>
+      <div id="settings-content"></div>
+    </section>
+  </main>
+</div>
+
+<!-- Modal: new board -->
+<div id="modal-board" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>New board</h3>
+    <label class="field-label" for="board-name">Name <span class="req">*</span></label>
+    <input id="board-name" class="input" type="text" maxlength="180" placeholder="Board name">
+    <label class="field-label" for="board-description">Description</label>
+    <textarea id="board-description" class="input" rows="3" maxlength="500" placeholder="Optional description"></textarea>
+    <label class="field-label" for="board-privacy">Privacy</label>
+    <select id="board-privacy" class="select">
+      <option value="PUBLIC">Public</option>
+      <option value="PROTECTED">Protected</option>
+      <option value="SECRET">Secret</option>
+    </select>
+    <div id="board-error" class="alert alert-error hidden"></div>
+    <div class="form-actions">
+      <button id="board-cancel-btn" class="btn btn-ghost">Cancel</button>
+      <button id="board-create-btn" class="btn btn-primary">Create board</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: schedule pin -->
+<div id="modal-schedule" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>Schedule pin</h3>
+    <p class="muted" id="schedule-pin-title"></p>
+    <label class="field-label" for="schedule-datetime">Publish at</label>
+    <input id="schedule-datetime" class="input" type="datetime-local">
+    <div id="schedule-error" class="alert alert-error hidden"></div>
+    <div class="form-actions">
+      <button id="schedule-cancel-btn" class="btn btn-ghost">Cancel</button>
+      <button id="schedule-save-btn" class="btn btn-primary">Schedule</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
